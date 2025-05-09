@@ -1,0 +1,65 @@
+name: keycloak-cluster
+
+services:
+  proxy:
+    image: traefik:v2.11
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--accesslog=true"
+      - "--accesslog.filepath=/var/log/traefik/access.log"
+      - "--accesslog.bufferingsize=100"
+    ports:
+      - "82:80"     # Puerto para el proxy reverso externo
+      - "8082:8080" # Puerto de la API/Dashboard (opcional, solo para diagnóstico)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - keycloak-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.internal`)"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=web"
+
+  node1:
+    extends:
+      file: keycloak.yml
+      service: keycloak
+    container_name: keycloak1
+    # ports:
+    #   - "8084:8080"
+    volumes:
+      - keycloak_themes:/opt/keycloak/themes
+    environment:
+      JGROUPS_DISCOVERY_PROPERTIES: initial_hosts=node1[7800],node2[7800]
+    networks:
+      - keycloak-network
+  
+  node2:
+    extends:
+      file: keycloak.yml
+      service: keycloak
+    container_name: keycloak2
+    # ports:
+    #   - "8085:8080"
+    volumes:
+      - keycloak_themes:/opt/keycloak/themes
+    environment:
+      JGROUPS_DISCOVERY_PROPERTIES: initial_hosts=node1[7800],node2[7800]
+    networks:
+      - keycloak-network
+
+networks:
+  keycloak-network:
+    driver: bridge
+
+volumes:
+  keycloak_themes:
+    driver: local
+  traefik_data:
+    driver: local
