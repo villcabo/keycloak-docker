@@ -1,0 +1,16 @@
+name: postgresql
+
+volumes:
+  postgres:
+
+services:
+  postgresql:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      POSTGRES_DB: ${DATABASE_NAME:-keycloak}
+      POSTGRES_HOST_AUTH_METHOD: trust

@@ -31,12 +31,12 @@ services:
       file: keycloak.yml
       service: keycloak
     container_name: keycloak1
-    # ports:
-    #   - "8084:8080"
+    ports:
+      - "9080:8080"
     volumes:
       - keycloak_themes:/opt/keycloak/themes
-    environment:
-      JGROUPS_DISCOVERY_PROPERTIES: initial_hosts=node1[7800],node2[7800]
+    # environment:
+    #   JGROUPS_DISCOVERY_PROPERTIES: initial_hosts=node1[7800],node2[7800]
     networks:
       - keycloak-network
   
@@ -49,8 +49,8 @@ services:
     #   - "8085:8080"
     volumes:
       - keycloak_themes:/opt/keycloak/themes
-    environment:
-      JGROUPS_DISCOVERY_PROPERTIES: initial_hosts=node1[7800],node2[7800]
+    # environment:
+    #   JGROUPS_DISCOVERY_PROPERTIES: initial_hosts=node1[7800],node2[7800]
     networks:
       - keycloak-network
 
