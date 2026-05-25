@@ -105,7 +105,7 @@ services:
     <<: *keycloak_common
     stop_grace_period: 90s
     deploy:
-      replicas: 3
+      replicas: ${KEYCLOAK_REPLICAS:-3}
       # Multi-host = 1 replica per node, so start-first has nowhere to place the
       # extra task → use stop-first. With parallelism 1 + the container healthcheck,
       # Swarm drains one node, waits for its replacement to be HEALTHY, then moves

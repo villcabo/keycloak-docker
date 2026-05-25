@@ -90,7 +90,7 @@ services:
     <<: *keycloak_common
     stop_grace_period: 90s
     deploy:
-      replicas: 3
+      replicas: ${KEYCLOAK_REPLICAS:-3}
       # Single-host: all replicas share this node, so start-first can spin up the
       # new task (and wait for it to be HEALTHY) before draining the old one →
       # always ≥3 ready during the rollout. Needs headroom for 1 extra replica.
