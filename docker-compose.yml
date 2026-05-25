@@ -35,7 +35,7 @@ x-keycloak-common: &keycloak_common
     # Database (external — must be reachable from this host)
     KC_DB: postgres
     KC_DB_URL: ${DATABASE_URL}
-    KC_DB_USERNAME: ${DATABASE_USERNAME}
+    KC_DB_USERNAME: ${DATABASE_USERNAME:-keycloak}
     KC_DB_PASSWORD: ${DATABASE_PASSWORD}
 
     # Edge proxy: TLS terminates on nginx, Traefik forwards X-Forwarded-* headers
@@ -52,7 +52,7 @@ x-keycloak-common: &keycloak_common
     KC_LOG_CONSOLE_OUTPUT: json
 
     # Bootstrap admin (Keycloak 26+ env names)
-    KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+    KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
     KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
 
     # Clustering: Infinispan over JGroups, peer discovery via DB table (JGROUPSPING).
@@ -130,7 +130,7 @@ services:
   # compose interpolates the whole file even when the profile is inactive (a guard
   # would break the plain `docker compose up` of Keycloak).
   alloy:
-    image: grafana/alloy:v1.16.1
+    image: grafana/alloy:${ALLOY_VERSION:-v1.16.1}
     profiles: ["monitoring"]
     user: root               # needs the docker socket; prefer group_add (docker gid) when hardening
     command:

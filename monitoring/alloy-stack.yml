@@ -12,7 +12,7 @@ configs:
 
 services:
   alloy:
-    image: grafana/alloy:v1.16.1
+    image: grafana/alloy:${ALLOY_VERSION:-v1.16.1}
     # Alloy must read the Docker socket → root here. In hardened setups prefer
     # `group_add: ["<docker gid>"]` instead of root.
     user: root

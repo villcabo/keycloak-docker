@@ -33,6 +33,36 @@ Edge: an external **nginx** terminates TLS and proxies to Traefik (`:80` on the 
 
 Deploy steps, node labeling, MTU-aware `docker network create`, and the nginx upstream are all in `README.md`. Upgrade procedure in `UPGRADE.md`.
 
+## Commands
+
+No build/lint/test — this is config only. The dev loop is **edit YAML → validate → deploy**.
+
+```bash
+# Validate a file (export your .env or dummy vars first, or compose reads ./.env)
+docker compose -f docker-compose.yml config -q
+docker compose -f keycloak-stack.single.yml config -q
+
+# Create/sync the single root .env from .env.example (preview diff + confirm + backup)
+bash scripts/env-sync.sh
+
+# Compose (dev) — N replicas on one host; add the profile for Alloy
+docker compose up -d --scale keycloak=3
+docker compose --profile monitoring up -d --scale keycloak=3
+
+# Swarm (QA/prod) — export .env first (stack deploy ignores it), create the overlay once
+set -a; . ./.env; set +a
+docker network create -d overlay --attachable --opt com.docker.network.driver.mtu=1450 keycloak-net
+docker stack deploy -c keycloak-stack.single.yml keycloak    # single-host
+docker stack deploy -c keycloak-stack.yml keycloak           # multi-host (label nodes first)
+docker stack deploy -c monitoring/alloy-stack.yml keycloak-alloy   # monitoring (swarm)
+
+# Confirm the cluster formed (must reach a view of N)
+docker service logs keycloak_keycloak 2>&1 | grep ISPN000094 | tail -1   # swarm
+docker compose logs keycloak | grep ISPN000094 | tail -1                 # compose
+```
+
+Topology is set by `KEYCLOAK_REPLICAS` (swarm, default 3) or `--scale keycloak=N` (compose).
+
 ## Things that bite
 
 - **Overlay MTU is load-bearing for clustering (Swarm only).** Create `keycloak-net` with `--opt com.docker.network.driver.mtu=1450` (lower on VPN/nested underlays). VXLAN adds ~50 bytes; too-high MTU silently fragments JGroups/Infinispan and breaks the cluster with no obvious error.
@@ -43,6 +73,8 @@ Deploy steps, node labeling, MTU-aware `docker network create`, and the nginx up
   - Confirm cluster formed: `select ip from jgroups_ping` shows the correct subnet IPs; logs reach `ISPN000094 ... (N) [...]`.
 
 - **Traefik label placement differs by mode.** In `docker-compose.yml`, routing labels are **top-level `labels:`** (the `docker` provider reads container labels). In swarm stacks, they are under **`deploy.labels:`** (the `swarm` provider reads service labels). Wrong placement → Traefik sees no containers (silent failure). Traefik **v3** splits these into two providers: compose uses `--providers.docker=true`; swarm stacks use `--providers.swarm=true` (+ `--providers.swarm.endpoint`/`.network`). v2's `--providers.docker.swarmmode=true` is gone.
+
+- **Traefik v3 Swarm provider polls — `refreshSeconds` must be low for zero-downtime.** The `swarm` provider discovers tasks by polling (default **15s**), so during a rolling update Traefik keeps routing to an already-drained task for up to 15s → bursts of 503. The swarm stacks set `--providers.swarm.refreshSeconds=2s` (measured on a hot deployment: 15s → 28/698 failed, 2s → 0/727). The flag is `refreshSeconds`, **not** `refreshInterval` (that one crashes Traefik: "field not found"). Compose's `docker` provider is event-driven, so this only applies to swarm.
 
 - **Clustering uses `jdbc-ping`, not TCPPING.** `KC_CACHE_STACK=jdbc-ping` discovers peers through a DB table — no peer IPs, no multicast, no `initial_hosts`. Don't reintroduce `JGROUPS_DISCOVERY_PROPERTIES`.
 
@@ -58,6 +90,10 @@ Deploy steps, node labeling, MTU-aware `docker network create`, and the nginx up
 
 - **Alloy collects all containers on the node** but `config.alloy` keeps only containers matching `.*keycloak.*`. Works for both swarm (`/<stack>_keycloak.<slot>.<hash>`) and compose (`/<project>-keycloak-<replica>`). Runs `user: root` to read the docker socket (prefer `group_add` with the docker GID when hardening). Promtail is deliberately avoided (EOL Feb 2026); Alloy is the successor.
 
-## Versions
+## Versions & .env conventions
 
-Keycloak `26.6.2` (override via `KEYCLOAK_IMAGE_VERSION`), PostgreSQL external, Traefik `v3.7.1`, Grafana Alloy `v1.16.1`.
+Keycloak `26.6.2` (`KEYCLOAK_IMAGE_VERSION`), Traefik `v3.7.1`, Grafana Alloy `v1.16.1` (`ALLOY_VERSION`), PostgreSQL external. Swarm replicas via `KEYCLOAK_REPLICAS` (default 3).
+
+Every default lives in the YAML as `${VAR:-default}`. In `.env.example`: the component **version opens each section** (commented, with its default); **uncommented = REQUIRED** (no sane default — DB URL/password, admin password, hostname); **commented = optional** (shown with its default). To make a var commentable, give it a `${VAR:-default}` in the YAML. Passwords never get a default.
+
+Install/deploy details (with secrets) go in `install-notes.local.md` **on the target server**, never in this repo — `*.local.md` is gitignored.
