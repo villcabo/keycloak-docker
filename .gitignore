@@ -2,6 +2,9 @@
 .env
 .env.bak.*
 
+# Install notes with credentials — never commit
+detalle-instalacion.md
+
 # IDE
 .idea/
 
