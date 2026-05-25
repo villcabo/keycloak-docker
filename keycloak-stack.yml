@@ -57,7 +57,7 @@ x-keycloak-common: &keycloak_common
     # Without it, JGroups binds the docker_gwbridge (172.x) — not routable
     # between hosts — and the cluster silently never forms. Adjust 10.* if your
     # overlay uses a custom IPAM subnet.
-    JAVA_OPTS_APPEND: "-Xms512m -Xmx1024m -Djgroups.bind.address=match-address:10.*"
+    JAVA_OPTS_APPEND: "-Xms512m -Xmx1024m -Djgroups.bind.address=${JGROUPS_BIND_ADDR:-match-address:10.*}"
   # The image is distroless (bash, but no curl/wget) → probe :9000/health/ready
   # over bash /dev/tcp. This is REQUIRED for safe rolling upgrades: Swarm uses it
   # to know a new node is actually READY before draining the next old one.

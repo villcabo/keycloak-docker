@@ -1,0 +1,121 @@
+# Keycloak HA cluster — Docker Compose (single-host).
+#
+# Topology: nginx (TLS termination) → Traefik (LB + health) → keycloak (N replicas).
+# Clustering: Infinispan jdbc-ping (peers register in the DB — no peer IPs needed).
+# Scale: `docker compose up -d --scale keycloak=N` for N=1, 2, 3, …
+#
+# Prerequisites:
+#   - External PostgreSQL reachable from this host.
+#   - External nginx terminating TLS and proxying to this host's :80.
+#   - cp .env.example .env && edit .env
+#
+# Deploy:
+#   set -a; . .env; set +a
+#   docker compose up -d --scale keycloak=3
+#
+# IMPORTANT — JGroups bridge subnet:
+#   The compose default JGROUPS_BIND_ADDR uses match-address:172.* (vanilla Docker
+#   bridge IPAM). If your daemon.json default-address-pools puts bridges on another
+#   subnet (e.g. 10.200.x), set JGROUPS_BIND_ADDR in .env BEFORE first deploy.
+#   Verify: docker network inspect <project>_keycloak-net --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
+#
+# NOTE — Traefik dashboard on :8080 is diagnostic-only. Firewall it in production.
+
+networks:
+  keycloak-net:
+    driver: bridge
+    # NOTE: no MTU opt needed for single-host bridge; multi-host compose is out of scope.
+
+x-keycloak-common: &keycloak_common
+  image: quay.io/keycloak/keycloak:${KEYCLOAK_IMAGE_VERSION:-26.6.2}
+  command: ["start"]
+  restart: always            # compose analog of deploy.restart_policy
+  networks: [keycloak-net]
+  environment:
+    # Database (external — must be reachable from this host)
+    KC_DB: postgres
+    KC_DB_URL: ${DATABASE_URL}
+    KC_DB_USERNAME: ${DATABASE_USERNAME}
+    KC_DB_PASSWORD: ${DATABASE_PASSWORD}
+
+    # Edge proxy: TLS terminates on nginx, Traefik forwards X-Forwarded-* headers
+    KC_PROXY_HEADERS: xforwarded
+    KC_HTTP_ENABLED: "true"
+    KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
+    KC_HOSTNAME_STRICT: "true"
+
+    KC_HEALTH_ENABLED: "true"
+    KC_METRICS_ENABLED: "true"
+
+    # Structured JSON logs to stdout — required for the Alloy/Loki pipeline to
+    # parse `level` etc. as fields (see monitoring/).
+    KC_LOG_CONSOLE_OUTPUT: json
+
+    # Bootstrap admin (Keycloak 26+ env names)
+    KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+    KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+
+    # Clustering: Infinispan over JGroups, peer discovery via DB table (JGROUPSPING).
+    # jdbc-ping is the right stack for compose: no multicast, no static IPs.
+    KC_CACHE: ispn
+    KC_CACHE_STACK: jdbc-ping
+
+    # APPEND (not JAVA_OPTS) so we keep Keycloak's tuned GC/container defaults.
+    # jgroups.bind.address: force JGroups onto the bridge interface (172.x default).
+    # Compose bridge default = match-address:172.* (vanilla Docker).
+    # Override via .env if your docker default-address-pools puts bridges elsewhere
+    # (e.g. 10.200.x). Verify: docker network inspect <project>_keycloak-net.
+    JAVA_OPTS_APPEND: "-Xms512m -Xmx1024m -Djgroups.bind.address=${JGROUPS_BIND_ADDR:-match-address:172.*}"
+  # The image is distroless (bash, but no curl/wget) → probe :9000/health/ready
+  # over bash /dev/tcp. Required so Traefik only routes to READY containers.
+  # ($$l escapes Compose variable interpolation so $l reaches the container.)
+  healthcheck:
+    test: ['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/localhost/9000; printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3; read -r l <&3; [[ "$$l" == *200* ]]']
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 120s
+  stop_grace_period: 90s
+  deploy:
+    resources:                # compose honors deploy.resources.limits without swarm
+      limits: { memory: 1536M }
+
+services:
+  traefik:
+    image: traefik:v2.11
+    # NOTE: traefik:v3 has different label syntax — bump the pin consciously.
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"                  # NO swarmmode flag
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=keycloak-net"
+      - "--entrypoints.web.address=:80"
+      - "--accesslog=true"
+      - "--accesslog.bufferingsize=100"
+    ports:
+      - "80:80"      # public edge (upstream nginx terminates HTTPS)
+      - "8080:8080"  # Traefik dashboard/API — diagnostic only, firewall in production
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks: [keycloak-net]
+    restart: always
+
+  keycloak:
+    <<: *keycloak_common
+    # TOP-LEVEL labels (compose reads container labels here, NOT deploy.labels).
+    # Traefik's docker provider (non-swarm) reads container labels, not service labels.
+    # Wrong placement → Traefik sees no containers (silent failure).
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_HOSTNAME}`)"
+      - "traefik.http.routers.keycloak.entrypoints=web"
+      - "traefik.http.routers.keycloak.middlewares=keycloak-https,keycloak-retry"
+      - "traefik.http.middlewares.keycloak-retry.retry.attempts=3"
+      - "traefik.http.middlewares.keycloak-retry.retry.initialinterval=100ms"
+      - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+      - "traefik.http.services.keycloak.loadbalancer.healthcheck.port=9000"
+      - "traefik.http.services.keycloak.loadbalancer.healthcheck.path=/health/ready"
+      - "traefik.http.services.keycloak.loadbalancer.healthcheck.interval=3s"
+      - "traefik.http.services.keycloak.loadbalancer.healthcheck.timeout=2s"
+      - "traefik.http.middlewares.keycloak-https.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.middlewares.keycloak-https.headers.customrequestheaders.X-Forwarded-Port=443"

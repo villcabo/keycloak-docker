@@ -43,7 +43,7 @@ x-keycloak-common: &keycloak_common
 
     # Force JGroups onto the overlay interface (10.x); without it it binds the
     # docker_gwbridge (172.x) and the cluster never forms. See keycloak-stack.yml.
-    JAVA_OPTS_APPEND: "-Xms512m -Xmx1024m -Djgroups.bind.address=match-address:10.*"
+    JAVA_OPTS_APPEND: "-Xms512m -Xmx1024m -Djgroups.bind.address=${JGROUPS_BIND_ADDR:-match-address:10.*}"
   # Distroless (bash, no curl) → probe :9000/health/ready via bash /dev/tcp.
   # Required so start-first waits for READY (not just process-up) on rolling
   # upgrades. $$l escapes Compose interpolation. See keycloak-stack.yml.

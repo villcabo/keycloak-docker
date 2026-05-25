@@ -1,131 +1,172 @@
+# Keycloak HA — Docker Compose & Docker Swarm
+
 > 🇬🇧 [English](./README.md) · 🇪🇸 **Español**
 
-# Keycloak HA en Docker Swarm
+Keycloak (Gestión de Identidad y Accesos) como clúster de alta disponibilidad. Solo infraestructura-como-configuración.
 
-Keycloak (Gestión de Identidad y Accesos) desplegado como clúster de alta disponibilidad sobre
-Docker Swarm: 3 nodos de Keycloak detrás de Traefik, agrupados mediante Infinispan
-`jdbc-ping`, respaldados por un PostgreSQL externo. Solo infraestructura-como-configuración —
-YAML de Compose/stack, sin código de aplicación.
+**Elige el modo según el propósito:**
+
+| Modo | Cuándo usarlo |
+|---|---|
+| **Docker Compose** (`docker-compose.yml`) | Desarrollo local / puesta en marcha rápida en una sola máquina. No requiere Swarm; iteración ágil. **No está pensado para producción.** |
+| **Docker Swarm** (`keycloak-stack.yml` / `keycloak-stack.single.yml`) | QA, certificación y producción. HA en host único o multi-host (tolera la caída de un host en modo multi-host); actualizaciones graduales sin downtime. |
+
+Mismo mecanismo de clustering (`jdbc-ping`), mismo stack de observabilidad — el modo de despliegue es la única diferencia.
 
 ## Arquitectura
 
 ```
-            ┌─────────────┐         your edge (external, not in this repo)
-  clients → │ nginx (TLS) │  terminates HTTPS, injects X-Forwarded-*
+            ┌─────────────┐         tu edge (externo, no está en este repo)
+  clients → │ nginx (TLS) │  termina HTTPS, inyecta X-Forwarded-*
             └──────┬──────┘
-                   │ HTTP :80  (upstream → Swarm nodes)
+                   │ HTTP :80
             ┌──────▼───────┐
-            │   Traefik    │  L7 load balance + health (3s) + retry  ← in cluster
+            │   Traefik    │  balanceo L7 + health (3s) + retry
             └──────┬───────┘
           ┌────────┼────────┐
       ┌───▼──┐ ┌───▼──┐ ┌───▼──┐
-      │ kc 1 │ │ kc 2 │ │ kc 3 │  Keycloak 3×  (Infinispan cluster via jdbc-ping)
+      │ kc 1 │ │ kc 2 │ │ kc 3 │  Keycloak N×  (clúster Infinispan via jdbc-ping)
       └───┬──┘ └───┬──┘ └───┬──┘
           └────────┼────────┘
             ┌───────▼────────┐
-            │ PostgreSQL ext │  shared state + cluster discovery (jdbc-ping)
+            │ PostgreSQL ext │  estado compartido + descubrimiento de clúster
             └────────────────┘
-
-  logs:  Keycloak → stdout (JSON) → Alloy (1/node) → external Loki   (independent)
+  logs: Keycloak → stdout (JSON) → Alloy (1/host) → Loki externo  (independiente)
 ```
-
-- **TLS termina en el upstream** (en tu nginx); Traefik habla HTTP plano y confía en
-  `X-Forwarded-*`. El balanceo y el health check viven **dentro del clúster** (Traefik),
-  por lo que nginx solo necesita un upstream.
-- **Dos topologías**: `keycloak-stack.yml` (multi-host, 1 nodo por host) y
-  `keycloak-stack.single.yml` (host único, 3 réplicas en una misma máquina).
-- **El logging es opcional e independiente** — ver [Monitoreo](#monitoreo-opcional).
 
 ## Requisitos previos
 
-- Un Docker Swarm (inicialízalo con `docker swarm init` si aún no tienes uno).
-- Un **PostgreSQL** externo accesible desde cada nodo del Swarm, con una base de datos `keycloak`.
-- Un **nginx** (o cualquier proxy L7) al frente para TLS — ver [Configurar nginx al frente](#configurar-nginx-al-frente).
+Compartidos (ambos modos):
 
-## 1. Configurar el entorno
+- **PostgreSQL** externo con esquema `keycloak`, accesible desde el/los host(s) con Keycloak.
+- **nginx** externo (o cualquier proxy L7) para terminación TLS — ver [Configurar nginx al frente](#configurar-nginx-al-frente).
+- Archivo `.env`: `cp .env.example .env` y completar todos los valores.
+
+Específicos por modo:
+
+- **Compose**: Docker Engine con el plugin Compose. No requiere Swarm.
+- **Swarm**: Docker Swarm (`docker swarm init`). Red overlay creada manualmente (ver más abajo).
+
+## Configurar
 
 ```bash
 cp .env.example .env
+# Completar todos los valores marcados como change_me
+set -a; . ./.env; set +a   # exportar antes de cualquier comando de despliegue
 ```
+
+Variables clave:
 
 | Variable | Descripción |
 |---|---|
 | `DATABASE_URL` | URL JDBC, p. ej. `jdbc:postgresql://db.internal:5432/keycloak` |
 | `DATABASE_USERNAME` / `DATABASE_PASSWORD` | Credenciales de la base de datos |
 | `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD` | Admin de arranque (KC 26+) |
-| `KEYCLOAK_HOSTNAME` | Nombre de host público, p. ej. `openid.sintesis.com.bo` |
+| `KEYCLOAK_HOSTNAME` | Nombre de host público, p. ej. `openid.example.com` |
 | `KEYCLOAK_IMAGE_VERSION` | Tag de la imagen (por defecto `26.6.2`) |
+| `JGROUPS_BIND_ADDR` | Patrón de bind de JGroups — dejar sin valor para usar el default por modo |
 
-Swarm **no** lee `.env` automáticamente — expórtalo antes de desplegar:
+**Nota sobre JGroups bind.** Default Compose: `match-address:172.*` (bridge). Default Swarm: `match-address:10.*` (overlay). Si tu `daemon.json` usa `default-address-pools` personalizados, verifica la subred real antes de desplegar:
+
+```bash
+docker network inspect <project>_keycloak-net --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
+```
+
+Si la subred no es `172.x`, configura `JGROUPS_BIND_ADDR=match-address:<prefijo>.*` en `.env`.
+
+---
+
+## Despliegue con Docker Compose
+
+> **Desarrollo local / puesta en marcha rápida en una sola máquina.** Para QA o producción, utilizar los stacks de Swarm que se describen más abajo.
+
+`docker-compose.yml` ejecuta Traefik + N réplicas de Keycloak en un único host. La topología se ajusta con `--scale`.
 
 ```bash
 set -a; . ./.env; set +a
+docker compose up -d --scale keycloak=3
+docker compose ps   # esperar hasta que todos los contenedores estén (healthy)
 ```
 
-## 2. Crear la red overlay (ojo con el MTU)
+Confirmar que el clúster se formó (debe mostrar una vista de 3 miembros):
 
-El overlay VXLAN añade ~50 bytes de overhead. El MTU del overlay debe ser menor que el del
-underlay (1500), de lo contrario el tráfico de JGroups/Infinispan se fragmenta silenciosamente
-y el clúster falla. El valor estándar es **1450** (menor en VPN/WireGuard ≈1400, cloud anidado ≈1370).
+```bash
+docker compose logs keycloak | grep ISPN000094 | tail -1
+# → ...Received new cluster view ... (3) [...]
+```
+
+Escalar — NO poner `replicas:` en `docker-compose.yml`; usar solo `--scale`:
+
+```bash
+docker compose up -d --scale keycloak=1   # un solo nodo
+docker compose up -d --scale keycloak=2   # dos nodos
+docker compose up -d --scale keycloak=3   # tres nodos (recomendado)
+```
+
+> El dashboard de Traefik en `:8080` es solo para diagnóstico. **Protegerlo con firewall en producción.**
+
+---
+
+## Despliegue con Docker Swarm
+
+> **Ruta para QA, certificación y producción.** Soporta HA en host único y multi-host, actualizaciones graduales sin downtime y rollouts con verificación de salud nativa de Swarm.
+
+| Archivo | Cuándo usarlo |
+|---|---|
+| `keycloak-stack.single.yml` | Un solo nodo Swarm (todas las réplicas en un host) |
+| `keycloak-stack.yml` | Swarm multi-host (una réplica por nodo etiquetado) |
+
+**Red overlay (una sola vez):**
 
 ```bash
 docker network create -d overlay --attachable \
   --opt com.docker.network.driver.mtu=1450 keycloak-net
 ```
 
-## 3a. Despliegue — host único
+VXLAN agrega ~50 bytes. MTU 1450 cabe en un underlay estándar de 1500; reducir a ~1400 en WireGuard/VPN.
 
-Las 3 réplicas se ubican en un solo nodo. No se necesitan etiquetas.
+**Host único:**
 
 ```bash
 set -a; . ./.env; set +a
 docker stack deploy -c keycloak-stack.single.yml keycloak
-
-# watch until 3/3 and the container healthcheck reports healthy
-watch -n3 'docker service ls --filter name=keycloak; \
-           docker ps --filter name=keycloak_keycloak --format "{{.Names}} {{.Status}}"'
-```
-
-El primer arranque toma ~50–60s por nodo (augmentación de Quarkus + boot + unión al clúster).
-Confirma que el clúster se formó (debe alcanzar una vista de 3 miembros):
-
-```bash
 docker service logs keycloak_keycloak 2>&1 | grep ISPN000094 | tail -1
-# → ...Received new cluster view... (3) [node, node, node]
 ```
 
-## 3b. Despliegue — multi-host (3 nodos)
-
-Una réplica de Keycloak por nodo etiquetado. Etiqueta los 3 hosts primero:
+**Multi-host (3 nodos):** etiquetar los nodos primero, luego desplegar:
 
 ```bash
 docker node update --label-add keycloak=true <node-1>
 docker node update --label-add keycloak=true <node-2>
 docker node update --label-add keycloak=true <node-3>
-
 set -a; . ./.env; set +a
 docker stack deploy -c keycloak-stack.yml keycloak
+docker service ps keycloak_keycloak
 ```
 
-Traefik corre en un nodo manager (necesita la API de Swarm). Verifica el placement y la
-vista del clúster igual que en el caso de host único. La tabla `jgroups_ping` debe contener
-las IPs **overlay** (`10.x`), no las de gwbridge (`172.x`):
+---
 
-```bash
-# from a host that can reach the DB:
-psql "$DATABASE_URL_psql" -c "select name, ip, coord from jgroups_ping;"
-```
+## Cheatsheet de topología
+
+Compose = desarrollo. Swarm = QA/producción.
+
+| Topología | Compose (desarrollo) | Swarm (QA/prod) |
+|---|---|---|
+| 1 nodo | `docker compose up -d --scale keycloak=1` | `replicas: 1` + deploy |
+| 2 nodos | `docker compose up -d --scale keycloak=2` | `replicas: 2`, etiquetar 2 nodos |
+| 3 nodos | `docker compose up -d --scale keycloak=3` | `replicas: 3`, etiquetar 3 nodos o usar archivo single-host |
+| N nodos | `docker compose up -d --scale keycloak=N` | `replicas: N`, etiquetar N nodos |
+
+---
 
 ## Configurar nginx al frente
 
-Traefik se publica en `:80` en cada nodo (malla de ingress de Swarm). Apunta nginx a los
-nodos del Swarm; Traefik (detrás de la malla) balancea la carga entre las 3 réplicas de
-Keycloak y descarta las no saludables. nginx termina TLS y **debe** enviar la cabecera
-`Host` pública (para que el router de Traefik coincida) y las cabeceras `X-Forwarded-*`.
+La configuración de nginx es la misma para ambos modos. Solo difiere el target del upstream:
+- **Compose**: `127.0.0.1:80` (Traefik en el host local).
+- **Swarm**: una o más IPs de nodos Swarm en `:80` (malla de ingress).
 
 ```nginx
-upstream keycloak_swarm {
-    # List several nodes for entrypoint HA; Traefik + mesh balance behind them.
+upstream keycloak_backend {
     server node-1.internal:80 max_fails=3 fail_timeout=10s;
     server node-2.internal:80 max_fails=3 fail_timeout=10s;
     server node-3.internal:80 max_fails=3 fail_timeout=10s;
@@ -135,64 +176,71 @@ upstream keycloak_swarm {
 server {
     listen 443 ssl;
     http2 on;
-    server_name openid.sintesis.com.bo;          # = KEYCLOAK_HOSTNAME
+    server_name openid.example.com;           # = KEYCLOAK_HOSTNAME
 
     ssl_certificate     /etc/nginx/certs/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/privkey.pem;
 
     location / {
-        proxy_pass http://keycloak_swarm;
+        proxy_pass http://keycloak_backend;
         proxy_http_version 1.1;
-        proxy_set_header Host              $host;        # must equal KEYCLOAK_HOSTNAME
+        proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;        # TLS terminates here
+        proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host  $host;
-        # Retry the next node if one is draining (e.g. during a rolling upgrade)
         proxy_next_upstream error timeout http_502 http_503;
     }
-
-    # Optional: redirect plain HTTP to HTTPS
 }
 ```
 
-> Los stacks de Keycloak también inyectan `X-Forwarded-Proto=https` en Traefik como
-> red de seguridad (para quien acceda a Traefik directamente). Con nginx al frente es
-> redundante pero inofensivo.
-
-## Actualizaciones
-
-Los cambios de versión **no** son una recarga en caliente — recrean contenedores mediante una
-actualización gradual de Swarm con un healthcheck de contenedor para que el servicio
-permanezca disponible. El procedimiento completo, la verificación de compatibilidad y los
-resultados medidos de zero-downtime están en
-[`UPGRADE.es.md`](./UPGRADE.es.md).
+---
 
 ## Monitoreo (opcional)
 
-El logging centralizado es **independiente** de los stacks de Keycloak — despliégalo u
-omítelo sin afectar a Keycloak. Keycloak escribe JSON en stdout
-(`KC_LOG_CONSOLE_OUTPUT=json`); **Grafana Alloy** (uno por nodo) lee el socket Docker de
-cada nodo y envía los logs a **tu Loki externo**. Loki y Grafana **no** se despliegan aquí.
+Grafana Alloy lee el socket Docker de cada host y envía los logs JSON de Keycloak a un Loki externo. Loki y Grafana **no** se despliegan aquí. Ambos modos comparten `monitoring/config.alloy`.
+
+Ejemplo de consulta: `{system="keycloak", service="keycloak"} | json`
+
+**Compose:**
 
 ```bash
-cp monitoring/.env.example monitoring/.env     # set LOKI_REMOTE_URL, tenant, auth
+cp monitoring/.env.example monitoring/.env   # configurar LOKI_REMOTE_URL, HOST_NAME, etc.
+set -a; . ./.env; set +a
+HOST_NAME=$(hostname) docker compose -f monitoring/alloy-compose.yml up -d
+```
+
+`HOST_NAME` es requerido — compose no tiene template `{{.Node.Hostname}}`.
+
+**Swarm:**
+
+```bash
+cp monitoring/.env.example monitoring/.env
 set -a; . ./monitoring/.env; set +a
 docker stack deploy -c monitoring/alloy-stack.yml keycloak-alloy
 ```
 
-Alloy envía logs con las etiquetas `system / service / instance / level / env / host` y
-`logger`/`thread` como metadatos estructurados (siguiendo el contrato de loki-docker). Consulta
-en tu Grafana, p. ej. `{system="keycloak", service="keycloak"} | json`.
+`HOST_NAME` se completa automáticamente via `{{.Node.Hostname}}`.
+
+---
+
+## Actualizaciones
+
+Los cambios de versión recrean contenedores. Ver [`UPGRADE.es.md`](./UPGRADE.es.md) para el procedimiento completo.
+
+**La actualización gradual sin downtime es una capacidad exclusiva de Swarm.** Compose reinicia los contenedores en el lugar (breve interrupción por réplica).
+
+---
 
 ## Cheatsheet de operaciones
 
-```bash
-docker service logs -f keycloak_keycloak           # follow logs (JSON)
-docker service ps keycloak_keycloak                # task placement / state
-docker service scale keycloak_keycloak=0           # full stop (maintenance)
-docker stack rm keycloak                           # tear down
-```
+| Acción | Compose | Swarm |
+|---|---|---|
+| Seguir logs | `docker compose logs -f keycloak` | `docker service logs -f keycloak_keycloak` |
+| Estado de contenedores | `docker compose ps` | `docker service ps keycloak_keycloak` |
+| Escalar a N | `docker compose up -d --scale keycloak=N` | Editar `replicas: N` + `docker stack deploy` |
+| Teardown | `docker compose down` | `docker stack rm keycloak` |
+| Rollback | Re-desplegar con el tag anterior | `docker service rollback keycloak_keycloak` |
 
 ## Licencia
 

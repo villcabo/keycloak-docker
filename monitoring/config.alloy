@@ -1,8 +1,9 @@
-// Grafana Alloy — log shipper para Keycloak en Swarm.
+// Grafana Alloy — log shipper para Keycloak. Funciona con AMBOS modos de deploy:
+//   - Docker Swarm  (alloy-stack.yml  — mode: global, Swarm configs)
+//   - Docker Compose (alloy-compose.yml — bind-mount, HOST_NAME por env)
 //
-// A diferencia del stack payment-disbursement (que lee *.log de archivos con
-// loki.source.file), Keycloak loguea JSON a stdout, así que acá la fuente es el
-// socket Docker (loki.source.docker). El CONTRATO de envío es el mismo:
+// Keycloak loguea JSON a stdout; la fuente es el socket Docker (loki.source.docker).
+// CONTRATO de envío (igual en ambos modos):
 //   labels:   system, service, instance, level, env, host
 //   metadata: logger, thread   (alta cardinalidad → structured metadata)
 //   sink:     HTTP push a LOKI_REMOTE_URL con header X-Scope-OrgID
@@ -14,19 +15,24 @@ discovery.docker "all" {
 }
 
 // Solo contenedores del servicio Keycloak (evita ruido del resto del nodo).
-// `instance` = "<servicio>.<slot>" (estable por réplica, sin el task id random).
+// `instance` = replica slot integer (1, 2, 3) — estable sin el task hash random.
+// Works for BOTH deploy modes:
+//   swarm:   container name = /<stack>_keycloak.<slot>.<hash>
+//   compose: container name = /<project>-keycloak-<replica>
 discovery.relabel "keycloak" {
   targets = discovery.docker.all.targets
 
+  // Keep only Keycloak containers — works for swarm (/stack_keycloak.N.hash)
+  // AND compose (/proj-keycloak-N).
   rule {
-    source_labels = ["__meta_docker_container_label_com_docker_swarm_service_name"]
+    source_labels = ["__meta_docker_container_name"]
     regex         = ".*keycloak.*"
     action        = "keep"
   }
-  // instance = replica slot (1, 2, 3) per the loki-docker label contract.
+  // instance = replica slot, both naming schemes.
   rule {
-    source_labels = ["__meta_docker_container_label_com_docker_swarm_task_name"]
-    regex         = "[^.]+\\.([0-9]+)\\..*"
+    source_labels = ["__meta_docker_container_name"]
+    regex         = ".*[._-]([0-9]+)(\..*)?$"
     target_label  = "instance"
     replacement   = "$1"
   }
