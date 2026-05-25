@@ -1,6 +1,6 @@
 # Environment files (secrets)
 .env
-monitoring/.env
+.env.bak.*
 
 # IDE
 .idea/

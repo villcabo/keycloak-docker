@@ -50,10 +50,14 @@ Específicos por modo:
 ## Configurar
 
 ```bash
-cp .env.example .env
+bash scripts/env-sync.sh   # crea .env desde .env.example (correlo de nuevo para fusionar vars nuevas)
 # Completar todos los valores marcados como change_me
 set -a; . ./.env; set +a   # exportar antes de cualquier comando de despliegue
 ```
+
+Un único `.env` en la raíz cubre todos los modos (compose, swarm, monitoreo).
+`scripts/env-sync.sh` lo re-sincroniza cuando `.env.example` suma variables nuevas:
+conserva tus valores, agrega las keys nuevas, y muestra un diff para confirmar antes de aplicar.
 
 Variables clave:
 
@@ -215,8 +219,7 @@ O poné `COMPOSE_PROFILES=monitoring` en `.env` y corré solo `docker compose up
 **Swarm:**
 
 ```bash
-cp monitoring/.env.example monitoring/.env
-set -a; . ./monitoring/.env; set +a
+set -a; . ./.env; set +a
 docker stack deploy -c monitoring/alloy-stack.yml keycloak-alloy
 ```
 

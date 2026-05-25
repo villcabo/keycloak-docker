@@ -50,7 +50,7 @@ Deploy steps, node labeling, MTU-aware `docker network create`, and the nginx up
 
 - **No zero-downtime upgrade in Docker Compose.** `docker compose up -d` restarts containers in-place — each replica is briefly unavailable (~50–60s) while it restarts. Zero-downtime rolling upgrade is a Swarm-only capability (governed by `update_config` + healthcheck gating). If you need zero-downtime, use a Swarm stack.
 
-- **`docker stack deploy` doesn't read `.env`.** Source it: `set -a; . ./.env; set +a`. Same for `monitoring/.env`. `docker compose` also doesn't auto-export `.env` to the shell — source it the same way.
+- **`docker stack deploy` doesn't read `.env`.** Source it: `set -a; . ./.env; set +a`. `docker compose` also doesn't auto-export `.env` — source it the same way. A **single root `.env`** covers all modes (compose, swarm, monitoring); `scripts/env-sync.sh` creates it from `.env.example` and re-merges new keys later (preview + confirm + backup), keeping your overrides.
 
 - **nginx must send `Host: <KEYCLOAK_HOSTNAME>` and `X-Forwarded-*`.** Traefik's router matches on `Host(${KEYCLOAK_HOSTNAME})`, and Keycloak (`KC_PROXY_HEADERS=xforwarded`) builds URLs from the forwarded headers — wrong/missing headers → wrong (http) redirect URLs.
 

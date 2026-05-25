@@ -2,8 +2,8 @@
 # Loki and Grafana are NOT part of this repo; they run elsewhere.
 # Independent of the Keycloak stacks: deploy/remove it without touching them.
 #
-#   cp monitoring/.env.example monitoring/.env   # set LOKI_REMOTE_URL, etc.
-#   set -a; . ./monitoring/.env; set +a
+#   # Uses the single repo-root .env (LOKI_REMOTE_URL, SYSTEM_NAME, etc.):
+#   set -a; . ./.env; set +a
 #   docker stack deploy -c monitoring/alloy-stack.yml keycloak-alloy
 
 configs:
