@@ -29,6 +29,13 @@ discovery.relabel "keycloak" {
     regex         = ".*keycloak.*"
     action        = "keep"
   }
+  // Drop Alloy's own container — in swarm the stack is `keycloak-alloy`, whose
+  // container name contains "keycloak" and would otherwise self-ingest.
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = ".*alloy.*"
+    action        = "drop"
+  }
   // instance = replica slot, both naming schemes.
   rule {
     source_labels = ["__meta_docker_container_name"]
