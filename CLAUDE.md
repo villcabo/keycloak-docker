@@ -27,7 +27,7 @@ Keycloak stacks define a **single** `keycloak` service with `replicas: N` (not N
 
 ### Monitoring
 
-- **`monitoring/alloy-stack.yml`** + **`monitoring/alloy-compose.yml`** + **`monitoring/config.alloy`** — optional, independent. Grafana Alloy reads each host's Docker socket and ships Keycloak's JSON logs to an **external** Loki. Loki/Grafana are NOT in this repo. Deploy/remove without touching Keycloak. Both Alloy files share the same `config.alloy` (swarm via Swarm config block, compose via bind-mount).
+- Grafana Alloy ships Keycloak's JSON logs to an **external** Loki (Loki/Grafana are NOT in this repo). Optional in both modes. **Compose**: built into `docker-compose.yml` as the `alloy` service behind `profiles: ["monitoring"]` — `docker compose --profile monitoring up -d` (or `COMPOSE_PROFILES=monitoring` in `.env`); no separate file. **Swarm**: `monitoring/alloy-stack.yml` (separate stack, `mode: global`). Both share `monitoring/config.alloy` (compose bind-mounts it; swarm uses a Swarm config block). The compose `alloy` env has no `LOKI_REMOTE_URL:?` guard — compose interpolates the whole file even with the profile off, so a guard would break the plain `docker compose up`.
 
 Edge: an external **nginx** terminates TLS and proxies to Traefik (`:80` on the host / Swarm nodes). Balancing + health live in the cluster (Traefik); nginx config is in the README.
 
@@ -54,7 +54,7 @@ Deploy steps, node labeling, MTU-aware `docker network create`, and the nginx up
 
 - **nginx must send `Host: <KEYCLOAK_HOSTNAME>` and `X-Forwarded-*`.** Traefik's router matches on `Host(${KEYCLOAK_HOSTNAME})`, and Keycloak (`KC_PROXY_HEADERS=xforwarded`) builds URLs from the forwarded headers — wrong/missing headers → wrong (http) redirect URLs.
 
-- **HOST_NAME required for compose Alloy.** Compose has no `{{.Node.Hostname}}` template. Pass `HOST_NAME=$(hostname)` in the environment before starting `alloy-compose.yml`, or set it in `.env`. Without it, the `host` label in Loki will be empty or wrong. Swarm fills it automatically via the `{{.Node.Hostname}}` template in `alloy-stack.yml`.
+- **HOST_NAME required for compose Alloy.** Compose has no `{{.Node.Hostname}}` template. Set `HOST_NAME` in `.env` (or `HOST_NAME=$(hostname)`) before enabling the `monitoring` profile. Without it, the `host` label in Loki will be empty or wrong. Swarm fills it automatically via the `{{.Node.Hostname}}` template in `alloy-stack.yml`.
 
 - **Alloy collects all containers on the node** but `config.alloy` keeps only containers matching `.*keycloak.*`. Works for both swarm (`/<stack>_keycloak.<slot>.<hash>`) and compose (`/<project>-keycloak-<replica>`). Runs `user: root` to read the docker socket (prefer `group_add` with the docker GID when hardening). Promtail is deliberately avoided (EOL Feb 2026); Alloy is the successor.
 

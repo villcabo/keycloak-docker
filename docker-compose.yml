@@ -119,3 +119,45 @@ services:
       - "traefik.http.services.keycloak.loadbalancer.healthcheck.timeout=2s"
       - "traefik.http.middlewares.keycloak-https.headers.customrequestheaders.X-Forwarded-Proto=https"
       - "traefik.http.middlewares.keycloak-https.headers.customrequestheaders.X-Forwarded-Port=443"
+
+  # Log shipper (OPTIONAL). Not started by default. Enable it with:
+  #   docker compose --profile monitoring up -d
+  # or set COMPOSE_PROFILES=monitoring in .env (then plain `docker compose up -d`).
+  # Reads the Docker socket, ships Keycloak's JSON logs to an EXTERNAL Loki.
+  # Loki/Grafana are NOT deployed here. (Swarm uses monitoring/alloy-stack.yml.)
+  # NOTE: set LOKI_REMOTE_URL in .env before enabling — no ':?' guard here because
+  # compose interpolates the whole file even when the profile is inactive (a guard
+  # would break the plain `docker compose up` of Keycloak).
+  alloy:
+    image: grafana/alloy:v1.16.1
+    profiles: ["monitoring"]
+    user: root               # needs the docker socket; prefer group_add (docker gid) when hardening
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    environment:
+      SYSTEM_NAME: ${SYSTEM_NAME:-keycloak}
+      ENV_NAME: ${ENV_NAME:-production}
+      # Compose has no {{.Node.Hostname}} template — set HOST_NAME in .env (or
+      # `HOST_NAME=$(hostname)` before starting). Empty default avoids a warning
+      # on the plain `docker compose up`; set it when enabling monitoring.
+      HOST_NAME: ${HOST_NAME:-}
+      LOKI_REMOTE_URL: ${LOKI_REMOTE_URL:-}
+      LOKI_TENANT: ${LOKI_TENANT:-keycloak}
+      LOKI_USERNAME: ${LOKI_USERNAME:-}
+      LOKI_PASSWORD: ${LOKI_PASSWORD:-}
+      LOKI_TLS_INSECURE_SKIP_VERIFY: ${LOKI_TLS_INSECURE_SKIP_VERIFY:-false}
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./monitoring/config.alloy:/etc/alloy/config.alloy:ro"
+      - alloy_data:/var/lib/alloy/data
+    networks: [keycloak-net]
+    restart: always
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+volumes:
+  alloy_data:

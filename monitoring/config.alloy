@@ -1,6 +1,6 @@
 // Grafana Alloy — log shipper para Keycloak. Funciona con AMBOS modos de deploy:
 //   - Docker Swarm  (alloy-stack.yml  — mode: global, Swarm configs)
-//   - Docker Compose (alloy-compose.yml — bind-mount, HOST_NAME por env)
+//   - Docker Compose (docker-compose.yml, profile monitoring — bind-mount, HOST_NAME por env)
 //
 // Keycloak loguea JSON a stdout; la fuente es el socket Docker (loki.source.docker).
 // CONTRATO de envío (igual en ambos modos):

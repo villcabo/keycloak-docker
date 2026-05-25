@@ -202,14 +202,14 @@ Grafana Alloy reads the Docker socket on each host and ships Keycloak's JSON log
 
 Query example: `{system="keycloak", service="keycloak"} | json`
 
-**Compose:**
+**Compose** — Alloy is built into `docker-compose.yml` behind the `monitoring` profile (no separate file). Set `LOKI_REMOTE_URL` and `HOST_NAME` in `.env`, then:
 
 ```bash
-cp monitoring/.env.example monitoring/.env   # set LOKI_REMOTE_URL, HOST_NAME, etc.
 set -a; . ./.env; set +a
-HOST_NAME=$(hostname) docker compose -f monitoring/alloy-compose.yml up -d
+docker compose --profile monitoring up -d --scale keycloak=3
 ```
 
+Or set `COMPOSE_PROFILES=monitoring` in `.env` and just run `docker compose up -d`.
 `HOST_NAME` is required — compose has no `{{.Node.Hostname}}` template.
 
 **Swarm:**
