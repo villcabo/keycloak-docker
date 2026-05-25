@@ -32,7 +32,7 @@ discovery.relabel "keycloak" {
   // instance = replica slot, both naming schemes.
   rule {
     source_labels = ["__meta_docker_container_name"]
-    regex         = ".*[._-]([0-9]+)(\..*)?$"
+    regex         = `.*[._-]([0-9]+)(\..*)?$`
     target_label  = "instance"
     replacement   = "$1"
   }
