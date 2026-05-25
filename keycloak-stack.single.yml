@@ -56,13 +56,18 @@ x-keycloak-common: &keycloak_common
 
 services:
   traefik:
-    image: traefik:v2.11
+    image: traefik:v3.7.1
     command:
       - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--providers.docker.swarmmode=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=keycloak-net"
+      # v3: Swarm is a dedicated provider (v2's --providers.docker.swarmmode is gone).
+      - "--providers.swarm=true"
+      - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
+      - "--providers.swarm.exposedbydefault=false"
+      - "--providers.swarm.network=keycloak-net"
+      # Poll the Swarm API fast (default 15s) so Traefik drops a draining task
+      # quickly during a rolling update — otherwise it keeps routing to a task
+      # that's already gone and returns 503s for up to 15s.
+      - "--providers.swarm.refreshSeconds=2s"
       - "--entrypoints.web.address=:80"
       - "--accesslog=true"
       - "--accesslog.bufferingsize=100"

@@ -42,7 +42,7 @@ Deploy steps, node labeling, MTU-aware `docker network create`, and the nginx up
   - **Compose**: default `match-address:172.*` (bridge interface). Override if your `daemon.json` `default-address-pools` puts bridges on a non-172 subnet (e.g. `10.200.x`). Verify: `docker network inspect <project>_keycloak-net --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`.
   - Confirm cluster formed: `select ip from jgroups_ping` shows the correct subnet IPs; logs reach `ISPN000094 ... (N) [...]`.
 
-- **Traefik label placement differs by mode.** In `docker-compose.yml`, routing labels are **top-level `labels:`** (Traefik's docker provider reads container labels). In swarm stacks, they are under **`deploy.labels:`** (swarmmode reads service labels). Wrong placement → Traefik sees no containers (silent failure). Traefik is configured with `--providers.docker.swarmmode=true` for swarm files and `--providers.docker=true` (no swarmmode) for compose.
+- **Traefik label placement differs by mode.** In `docker-compose.yml`, routing labels are **top-level `labels:`** (the `docker` provider reads container labels). In swarm stacks, they are under **`deploy.labels:`** (the `swarm` provider reads service labels). Wrong placement → Traefik sees no containers (silent failure). Traefik **v3** splits these into two providers: compose uses `--providers.docker=true`; swarm stacks use `--providers.swarm=true` (+ `--providers.swarm.endpoint`/`.network`). v2's `--providers.docker.swarmmode=true` is gone.
 
 - **Clustering uses `jdbc-ping`, not TCPPING.** `KC_CACHE_STACK=jdbc-ping` discovers peers through a DB table — no peer IPs, no multicast, no `initial_hosts`. Don't reintroduce `JGROUPS_DISCOVERY_PROPERTIES`.
 
@@ -60,4 +60,4 @@ Deploy steps, node labeling, MTU-aware `docker network create`, and the nginx up
 
 ## Versions
 
-Keycloak `26.6.2` (override via `KEYCLOAK_IMAGE_VERSION`), PostgreSQL external, Traefik `v2.11`, Grafana Alloy `v1.16.1`.
+Keycloak `26.6.2` (override via `KEYCLOAK_IMAGE_VERSION`), PostgreSQL external, Traefik `v3.7.1`, Grafana Alloy `v1.16.1`.

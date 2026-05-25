@@ -82,11 +82,12 @@ x-keycloak-common: &keycloak_common
 
 services:
   traefik:
-    image: traefik:v2.11
-    # NOTE: traefik:v3 has different label syntax — bump the pin consciously.
+    image: traefik:v3.7.1
+    # v3: the Docker provider has NO swarm support (Swarm is a separate provider,
+    # used only in the swarm stacks). Routing labels are unchanged from v2.
     command:
       - "--api.insecure=true"
-      - "--providers.docker=true"                  # NO swarmmode flag
+      - "--providers.docker=true"                  # docker provider (compose)
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=keycloak-net"
       - "--entrypoints.web.address=:80"
