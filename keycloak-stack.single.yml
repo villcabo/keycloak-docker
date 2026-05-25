@@ -1,0 +1,118 @@
+# Keycloak HA cluster on Docker Swarm — SINGLE-HOST variant.
+#
+# Same topology as keycloak-stack.yml but all 3 replicas land on this one node:
+# no placement constraints, no max_replicas_per_node. jdbc-ping still clusters
+# them through the DB. Useful for a single-server box or staging.
+#
+# Prereqs (run once):
+#   docker network create -d overlay --attachable \
+#     --opt com.docker.network.driver.mtu=1450 keycloak-net
+#
+# Deploy:
+#   docker stack deploy -c keycloak-stack.single.yml keycloak
+
+networks:
+  keycloak-net:
+    external: true
+
+x-keycloak-common: &keycloak_common
+  image: quay.io/keycloak/keycloak:${KEYCLOAK_IMAGE_VERSION:-26.6.2}
+  command: ["start"]
+  networks:
+    - keycloak-net
+  environment:
+    KC_DB: postgres
+    KC_DB_URL: ${DATABASE_URL}
+    KC_DB_USERNAME: ${DATABASE_USERNAME}
+    KC_DB_PASSWORD: ${DATABASE_PASSWORD}
+
+    KC_PROXY_HEADERS: xforwarded
+    KC_HTTP_ENABLED: "true"
+    KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
+    KC_HOSTNAME_STRICT: "true"
+
+    KC_HEALTH_ENABLED: "true"
+    KC_METRICS_ENABLED: "true"
+    KC_LOG_CONSOLE_OUTPUT: json
+
+    KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
+    KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+
+    KC_CACHE: ispn
+    KC_CACHE_STACK: jdbc-ping
+
+    # Force JGroups onto the overlay interface (10.x); without it it binds the
+    # docker_gwbridge (172.x) and the cluster never forms. See keycloak-stack.yml.
+    JAVA_OPTS_APPEND: "-Xms512m -Xmx1024m -Djgroups.bind.address=match-address:10.*"
+  # Distroless (bash, no curl) → probe :9000/health/ready via bash /dev/tcp.
+  # Required so start-first waits for READY (not just process-up) on rolling
+  # upgrades. $$l escapes Compose interpolation. See keycloak-stack.yml.
+  healthcheck:
+    test: ['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/localhost/9000; printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3; read -r l <&3; [[ "$$l" == *200* ]]']
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 120s
+
+services:
+  traefik:
+    image: traefik:v2.11
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.swarmmode=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=keycloak-net"
+      - "--entrypoints.web.address=:80"
+      - "--accesslog=true"
+      - "--accesslog.bufferingsize=100"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - keycloak-net
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+
+  keycloak:
+    <<: *keycloak_common
+    stop_grace_period: 90s
+    deploy:
+      replicas: 3
+      # Single-host: all replicas share this node, so start-first can spin up the
+      # new task (and wait for it to be HEALTHY) before draining the old one →
+      # always ≥3 ready during the rollout. Needs headroom for 1 extra replica.
+      update_config:
+        parallelism: 1
+        order: start-first
+        delay: 10s
+        monitor: 30s
+        failure_action: pause
+      resources:
+        limits:
+          memory: 1536M
+        reservations:
+          memory: 768M
+      restart_policy:
+        condition: any
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_HOSTNAME}`)"
+        - "traefik.http.routers.keycloak.entrypoints=web"
+        - "traefik.http.routers.keycloak.middlewares=keycloak-https,keycloak-retry"
+        - "traefik.http.middlewares.keycloak-retry.retry.attempts=3"
+        - "traefik.http.middlewares.keycloak-retry.retry.initialinterval=100ms"
+        - "traefik.http.services.keycloak.loadbalancer.server.port=8080"
+        - "traefik.http.services.keycloak.loadbalancer.healthcheck.port=9000"
+        - "traefik.http.services.keycloak.loadbalancer.healthcheck.path=/health/ready"
+        - "traefik.http.services.keycloak.loadbalancer.healthcheck.interval=3s"
+        - "traefik.http.services.keycloak.loadbalancer.healthcheck.timeout=2s"
+        - "traefik.http.middlewares.keycloak-https.headers.customrequestheaders.X-Forwarded-Proto=https"
+        - "traefik.http.middlewares.keycloak-https.headers.customrequestheaders.X-Forwarded-Port=443"

@@ -1,0 +1,113 @@
+// Grafana Alloy — log shipper para Keycloak en Swarm.
+//
+// A diferencia del stack payment-disbursement (que lee *.log de archivos con
+// loki.source.file), Keycloak loguea JSON a stdout, así que acá la fuente es el
+// socket Docker (loki.source.docker). El CONTRATO de envío es el mismo:
+//   labels:   system, service, instance, level, env, host
+//   metadata: logger, thread   (alta cardinalidad → structured metadata)
+//   sink:     HTTP push a LOKI_REMOTE_URL con header X-Scope-OrgID
+//
+// Loki y Grafana NO viven en este repo: corren externos. Este stack solo envía.
+
+discovery.docker "all" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Solo contenedores del servicio Keycloak (evita ruido del resto del nodo).
+// `instance` = "<servicio>.<slot>" (estable por réplica, sin el task id random).
+discovery.relabel "keycloak" {
+  targets = discovery.docker.all.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_swarm_service_name"]
+    regex         = ".*keycloak.*"
+    action        = "keep"
+  }
+  // instance = replica slot (1, 2, 3) per the loki-docker label contract.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_swarm_task_name"]
+    regex         = "[^.]+\\.([0-9]+)\\..*"
+    target_label  = "instance"
+    replacement   = "$1"
+  }
+}
+
+loki.source.docker "keycloak" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.relabel.keycloak.output
+  relabel_rules = discovery.relabel.keycloak.rules
+  forward_to    = [loki.process.keycloak.receiver]
+}
+
+loki.process "keycloak" {
+  forward_to = [loki.write.remote.receiver]
+
+  // Parse del JSON que emite Keycloak (KC_LOG_CONSOLE_OUTPUT=json).
+  stage.json {
+    expressions = {
+      level     = "level",
+      logger    = "loggerName",
+      thread    = "threadName",
+      timestamp = "timestamp",
+    }
+  }
+
+  // Etiquetas fijas del despliegue (del .env del stack alloy).
+  stage.static_labels {
+    values = {
+      system  = sys.env("SYSTEM_NAME"),
+      env     = sys.env("ENV_NAME"),
+      host    = sys.env("HOST_NAME"),
+      service = "keycloak",
+    }
+  }
+
+  // Normalizar level a lowercase (alinea con la convención de Loki; evita
+  // streams duplicados INFO/info).
+  stage.template {
+    source   = "level"
+    template = "{{ ToLower .Value }}"
+  }
+
+  // Usar el timestamp del log; fallback a ingest time si parsea mal.
+  stage.timestamp {
+    source = "timestamp"
+    format = "RFC3339Nano"
+  }
+
+  stage.labels {
+    values = {
+      level = "",
+    }
+  }
+
+  // Alta cardinalidad → structured metadata (Loki 3.x lo indexa sin coste de stream).
+  stage.structured_metadata {
+    values = {
+      logger = "",
+      thread = "",
+    }
+  }
+}
+
+loki.write "remote" {
+  endpoint {
+    url = sys.env("LOKI_REMOTE_URL")
+
+    // Multi-tenant: separa logs por tenant en Loki. Convención: tenant = system.
+    headers = {
+      "X-Scope-OrgID" = sys.env("LOKI_TENANT"),
+    }
+
+    // Basic auth opcional (solo aplica si LOKI_USERNAME está seteado).
+    basic_auth {
+      username = sys.env("LOKI_USERNAME")
+      password = sys.env("LOKI_PASSWORD")
+    }
+
+    // Para Loki con cert self-signed en red interna.
+    tls_config {
+      insecure_skip_verify = sys.env("LOKI_TLS_INSECURE_SKIP_VERIFY") == "true"
+    }
+  }
+}

@@ -1,2 +1,10 @@
+# Environment files (secrets)
 .env
+monitoring/.env
+
+# IDE
 .idea/
+
+# Playwright / test artifacts
+.playwright-mcp/
+*.png

@@ -1,0 +1,53 @@
+# Alloy-only stack — ships Keycloak logs to an EXTERNAL Loki.
+# Loki and Grafana are NOT part of this repo; they run elsewhere.
+# Independent of the Keycloak stacks: deploy/remove it without touching them.
+#
+#   cp monitoring/.env.example monitoring/.env   # set LOKI_REMOTE_URL, etc.
+#   set -a; . ./monitoring/.env; set +a
+#   docker stack deploy -c monitoring/alloy-stack.yml keycloak-alloy
+
+configs:
+  alloy_config:
+    file: ./config.alloy
+
+services:
+  alloy:
+    image: grafana/alloy:v1.16.1
+    # Alloy must read the Docker socket → root here. In hardened setups prefer
+    # `group_add: ["<docker gid>"]` instead of root.
+    user: root
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    environment:
+      SYSTEM_NAME: ${SYSTEM_NAME:-keycloak}
+      ENV_NAME: ${ENV_NAME:-production}
+      # Swarm template → real hostname of the node each global task lands on.
+      HOST_NAME: "{{.Node.Hostname}}"
+      LOKI_REMOTE_URL: ${LOKI_REMOTE_URL:?LOKI_REMOTE_URL is required}
+      LOKI_TENANT: ${LOKI_TENANT:-keycloak}
+      LOKI_USERNAME: ${LOKI_USERNAME:-}
+      LOKI_PASSWORD: ${LOKI_PASSWORD:-}
+      LOKI_TLS_INSECURE_SKIP_VERIFY: ${LOKI_TLS_INSECURE_SKIP_VERIFY:-false}
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - alloy_data:/var/lib/alloy/data
+    configs:
+      - source: alloy_config
+        target: /etc/alloy/config.alloy
+    deploy:
+      mode: global          # one collector per node
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+
+volumes:
+  alloy_data:
