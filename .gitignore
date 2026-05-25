@@ -5,6 +5,9 @@
 # Local-only notes with secrets (install/deploy details) — never commit
 *.local.md
 
+# SDD/OpenSpec planning — not versioned in this infra repo
+openspec/
+
 # IDE
 .idea/
 
