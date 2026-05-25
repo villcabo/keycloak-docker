@@ -2,8 +2,8 @@
 .env
 .env.bak.*
 
-# Install notes with credentials — never commit
-detalle-instalacion.md
+# Local-only notes with secrets (install/deploy details) — never commit
+*.local.md
 
 # IDE
 .idea/
