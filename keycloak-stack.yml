@@ -86,13 +86,13 @@ services:
       - "--entrypoints.web.address=:80"
       - "--accesslog=true"
       - "--accesslog.bufferingsize=100"
+    networks:
+      - keycloak-net
     ports:
       - "80:80"      # public edge (an upstream LB/proxy terminates HTTPS)
       - "8080:8080"  # Traefik dashboard/API — diagnostic only
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    networks:
-      - keycloak-net
     deploy:
       replicas: 1
       placement:

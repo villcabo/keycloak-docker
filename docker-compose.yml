@@ -29,8 +29,12 @@ networks:
 x-keycloak-common: &keycloak_common
   image: quay.io/keycloak/keycloak:${KEYCLOAK_IMAGE_VERSION:-26.6.2}
   command: ["start"]
-  restart: always            # compose analog of deploy.restart_policy
+  restart: unless-stopped            # compose analog of deploy.restart_policy
+  stop_grace_period: 90s
   networks: [keycloak-net]
+  deploy:
+    resources:                # compose honors deploy.resources.limits without swarm
+      limits: { memory: 1536M }
   environment:
     # Database (external — must be reachable from this host)
     KC_DB: postgres
@@ -75,14 +79,11 @@ x-keycloak-common: &keycloak_common
     timeout: 5s
     retries: 3
     start_period: 120s
-  stop_grace_period: 90s
-  deploy:
-    resources:                # compose honors deploy.resources.limits without swarm
-      limits: { memory: 1536M }
 
 services:
   traefik:
     image: traefik:v3.7.1
+    restart: unless-stopped
     # v3: the Docker provider has NO swarm support (Swarm is a separate provider,
     # used only in the swarm stacks). Routing labels are unchanged from v2.
     command:
@@ -93,13 +94,12 @@ services:
       - "--entrypoints.web.address=:80"
       - "--accesslog=true"
       - "--accesslog.bufferingsize=100"
+    networks: [keycloak-net]
     ports:
       - "80:80"      # public edge (upstream nginx terminates HTTPS)
       - "8080:8080"  # Traefik dashboard/API — diagnostic only, firewall in production
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    networks: [keycloak-net]
-    restart: always
 
   keycloak:
     <<: *keycloak_common
@@ -133,11 +133,20 @@ services:
     image: grafana/alloy:${ALLOY_VERSION:-v1.16.1}
     profiles: ["monitoring"]
     user: root               # needs the docker socket; prefer group_add (docker gid) when hardening
+    restart: unless-stopped
     command:
       - run
       - /etc/alloy/config.alloy
       - --storage.path=/var/lib/alloy/data
       - --server.http.listen-addr=0.0.0.0:12345
+    networks: [keycloak-net]
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./monitoring/config.alloy:/etc/alloy/config.alloy:ro"
+      - alloy_data:/var/lib/alloy/data
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
     environment:
       SYSTEM_NAME: ${SYSTEM_NAME:-keycloak}
       ENV_NAME: ${ENV_NAME:-production}
@@ -150,15 +159,6 @@ services:
       LOKI_USERNAME: ${LOKI_USERNAME:-}
       LOKI_PASSWORD: ${LOKI_PASSWORD:-}
       LOKI_TLS_INSECURE_SKIP_VERIFY: ${LOKI_TLS_INSECURE_SKIP_VERIFY:-false}
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "./monitoring/config.alloy:/etc/alloy/config.alloy:ro"
-      - alloy_data:/var/lib/alloy/data
-    networks: [keycloak-net]
-    restart: always
-    deploy:
-      resources:
-        limits: { cpus: "0.5", memory: 512M }
 
 volumes:
   alloy_data:

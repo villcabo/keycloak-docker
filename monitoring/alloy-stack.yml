@@ -21,16 +21,6 @@ services:
       - /etc/alloy/config.alloy
       - --storage.path=/var/lib/alloy/data
       - --server.http.listen-addr=0.0.0.0:12345
-    environment:
-      SYSTEM_NAME: ${SYSTEM_NAME:-keycloak}
-      ENV_NAME: ${ENV_NAME:-production}
-      # Swarm template → real hostname of the node each global task lands on.
-      HOST_NAME: "{{.Node.Hostname}}"
-      LOKI_REMOTE_URL: ${LOKI_REMOTE_URL:?LOKI_REMOTE_URL is required}
-      LOKI_TENANT: ${LOKI_TENANT:-keycloak}
-      LOKI_USERNAME: ${LOKI_USERNAME:-}
-      LOKI_PASSWORD: ${LOKI_PASSWORD:-}
-      LOKI_TLS_INSECURE_SKIP_VERIFY: ${LOKI_TLS_INSECURE_SKIP_VERIFY:-false}
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - alloy_data:/var/lib/alloy/data
@@ -48,6 +38,16 @@ services:
         reservations:
           cpus: "0.1"
           memory: 128M
+    environment:
+      SYSTEM_NAME: ${SYSTEM_NAME:-keycloak}
+      ENV_NAME: ${ENV_NAME:-production}
+      # Swarm template → real hostname of the node each global task lands on.
+      HOST_NAME: "{{.Node.Hostname}}"
+      LOKI_REMOTE_URL: ${LOKI_REMOTE_URL:?LOKI_REMOTE_URL is required}
+      LOKI_TENANT: ${LOKI_TENANT:-keycloak}
+      LOKI_USERNAME: ${LOKI_USERNAME:-}
+      LOKI_PASSWORD: ${LOKI_PASSWORD:-}
+      LOKI_TLS_INSECURE_SKIP_VERIFY: ${LOKI_TLS_INSECURE_SKIP_VERIFY:-false}
 
 volumes:
   alloy_data:

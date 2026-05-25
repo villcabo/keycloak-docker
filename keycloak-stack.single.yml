@@ -71,13 +71,13 @@ services:
       - "--entrypoints.web.address=:80"
       - "--accesslog=true"
       - "--accesslog.bufferingsize=100"
+    networks:
+      - keycloak-net
     ports:
       - "80:80"
       - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    networks:
-      - keycloak-net
     deploy:
       replicas: 1
       placement:
