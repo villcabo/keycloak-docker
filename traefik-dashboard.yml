@@ -1,0 +1,15 @@
+# Traefik dashboard/API — OPTIONAL overlay. Layer it on top of any base file to
+# publish the dashboard port. The dashboard is OFF by default; enabling it needs
+# BOTH this overlay (publishes the port) AND TRAEFIK_API_INSECURE=true in .env
+# (makes Traefik actually serve the API). Diagnostic only — firewall in production.
+#
+#   Compose: docker compose -f docker-compose.yml -f traefik-dashboard.yml up -d
+#   Swarm:   docker stack deploy -c keycloak-stack.single.yml -c traefik-dashboard.yml keycloak
+#            docker stack deploy -c keycloak-stack.yml        -c traefik-dashboard.yml keycloak
+#
+# Ports merge additively across files, so this only ADDS :8080 to the base's :80.
+
+services:
+  traefik:
+    ports:
+      - "${TRAEFIK_DASHBOARD_PORT:-8080}:8080"   # Traefik dashboard/API

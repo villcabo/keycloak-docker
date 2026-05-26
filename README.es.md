@@ -107,7 +107,10 @@ docker compose up -d --scale keycloak=2   # dos nodos
 docker compose up -d --scale keycloak=3   # tres nodos (recomendado)
 ```
 
-> El dashboard de Traefik en `:8080` es solo para diagnóstico. **Protegerlo con firewall en producción.**
+> **El dashboard de Traefik está APAGADO por defecto** (no se publica `:8080`). Para activarlo,
+> poné `TRAEFIK_API_INSECURE=true` en `.env` **y** aplicá el overlay `traefik-dashboard.yml`:
+> `docker compose -f docker-compose.yml -f traefik-dashboard.yml up -d`. Solo diagnóstico —
+> protegerlo con firewall en producción. El puerto HTTP público se cambia con `TRAEFIK_HTTP_PORT`.
 
 ---
 
@@ -147,6 +150,9 @@ set -a; . ./.env; set +a
 docker stack deploy -c keycloak-stack.yml keycloak
 docker service ps keycloak_keycloak
 ```
+
+> **Dashboard de Traefik opcional (swarm):** poné `TRAEFIK_API_INSECURE=true` y agregá el
+> overlay: `docker stack deploy -c keycloak-stack.single.yml -c traefik-dashboard.yml keycloak`.
 
 ---
 

@@ -90,7 +90,9 @@ services:
     # v3: the Docker provider has NO swarm support (Swarm is a separate provider,
     # used only in the swarm stacks). Routing labels are unchanged from v2.
     command:
-      - "--api.insecure=true"
+      # Dashboard/API. OFF by default. Enable it with the traefik-dashboard.yml
+      # overlay (which also publishes the port) — see README "Traefik dashboard".
+      - "--api.insecure=${TRAEFIK_API_INSECURE:-false}"
       - "--providers.docker=true"                  # docker provider (compose)
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=keycloak-net"
@@ -99,8 +101,7 @@ services:
       - "--accesslog.bufferingsize=100"
     networks: [keycloak-net]
     ports:
-      - "80:80"      # public edge (upstream nginx terminates HTTPS)
-      - "8080:8080"  # Traefik dashboard/API — diagnostic only, firewall in production
+      - "${TRAEFIK_HTTP_PORT:-80}:80"      # public edge (upstream nginx terminates HTTPS)
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
 
