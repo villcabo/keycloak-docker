@@ -245,6 +245,20 @@ Los cambios de versión recrean contenedores. Ver [`UPGRADE.es.md`](./UPGRADE.es
 | Teardown | `docker compose down` | `docker stack rm keycloak` |
 | Rollback | Re-desplegar con el tag anterior | `docker service rollback keycloak_keycloak` |
 
+## Autor
+
+<a href="https://github.com/villcabo"><img src="https://github.com/villcabo.png" width="80" alt="Bismarck Villca Soliz" align="left" style="margin-right: 16px; border-radius: 50%;" /></a>
+
+**Bismarck Villca Soliz**
+
+[![Website](https://img.shields.io/badge/Website-villcabo.github.io-222222?logo=githubpages&logoColor=white)](https://villcabo.github.io/)
+[![GitHub](https://img.shields.io/badge/GitHub-villcabo-181717?logo=github)](https://github.com/villcabo)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-villcabo-0A66C2?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0yMC40NDcgMjAuNDUyaC0zLjU1NHYtNS41NjljMC0xLjMyOC0uMDI3LTMuMDM3LTEuODUyLTMuMDM3LTEuODUzIDAtMi4xMzYgMS40NDUtMi4xMzYgMi45Mzl2NS42NjdIOS4zNTFWOWgzLjQxNHYxLjU2MWguMDQ2Yy40NzctLjkgMS42MzctMS44NSAzLjM3LTEuODUgMy42MDEgMCA0LjI2NyAyLjM3IDQuMjY3IDUuNDU1djYuMjg2ek01LjMzNyA3LjQzM2MtMS4xNDQgMC0yLjA2My0uOTI2LTIuMDYzLTIuMDY1IDAtMS4xMzguOTItMi4wNjMgMi4wNjMtMi4wNjMgMS4xNCAwIDIuMDY0LjkyNSAyLjA2NCAyLjA2MyAwIDEuMTM5LS45MjUgMi4wNjUtMi4wNjQgMi4wNjV6bTEuNzgyIDEzLjAxOUgzLjU1NVY5aDMuNTY0djExLjQ1MnpNMjIuMjI1IDBIMS43NzFDLjc5MiAwIDAgLjc3NCAwIDEuNzI5djIwLjU0MkMwIDIzLjIyNy43OTIgMjQgMS43NzEgMjRoMjAuNDUxQzIzLjIgMjQgMjQgMjMuMjI3IDI0IDIyLjI3MVYxLjcyOUMyNCAuNzc0IDIzLjIgMCAyMi4yMjIgMGguMDAzeiIvPjwvc3ZnPg==)](https://www.linkedin.com/in/villcabo/)
+[![Facebook](https://img.shields.io/badge/Facebook-bismarck.villca-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/bismarck.villca)
+[![Email](https://img.shields.io/badge/Email-bismarck.villca%40gmail.com-D14836?logo=gmail&logoColor=white)](mailto:bismarck.villca@gmail.com)
+
+<br clear="left" />
+
 ## Licencia
 
 MIT.
