@@ -108,8 +108,9 @@ docker compose up -d --scale keycloak=3   # tres nodos (recomendado)
 ```
 
 > **El dashboard de Traefik está APAGADO por defecto** (no se publica `:8080`). Para activarlo,
-> poné `TRAEFIK_API_INSECURE=true` en `.env` **y** aplicá el overlay `traefik-dashboard.yml`:
-> `docker compose -f docker-compose.yml -f traefik-dashboard.yml up -d`. Solo diagnóstico —
+> poné `TRAEFIK_API_INSECURE=true` en `.env` **y** agregá el overlay `traefik-dashboard.yml`.
+> Lo más limpio en compose: seteá `COMPOSE_FILE=docker-compose.yml:traefik-dashboard.yml` en
+> `.env` y `docker compose up -d` pelado ya lo incluye (sin `-f`). Solo diagnóstico —
 > protegerlo con firewall en producción. El puerto HTTP público se cambia con `TRAEFIK_HTTP_PORT`.
 
 ---
