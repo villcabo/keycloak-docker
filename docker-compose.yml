@@ -54,6 +54,9 @@ x-keycloak-common: &keycloak_common
     # Structured JSON logs to stdout — required for the Alloy/Loki pipeline to
     # parse `level` etc. as fields (see monitoring/).
     KC_LOG_CONSOLE_OUTPUT: json
+    # Root log level. Override per-category, e.g. INFO,org.keycloak.events:debug
+    # to see auth events (Keycloak logs successful logins at DEBUG).
+    KC_LOG_LEVEL: ${KC_LOG_LEVEL:-INFO}
 
     # Bootstrap admin (Keycloak 26+ env names)
     KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
